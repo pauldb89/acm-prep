@@ -1,4 +1,5 @@
 #include <algorithm>
+#include <cassert>
 #include <cmath>
 #include <cstdio>
 #include <vector>
@@ -33,77 +34,114 @@ struct Circle {
     radius = center.CalcDist(P2);
   }
   Circle(const Point& P1, const Point& P2, const Point& P3) {
-    Point M1 = Point((P1.x + P2.x) / 2, (P1.y + P2.y) / 2);
-    Point V = P2-P1;
-    Point D1 = Point(-V.y, V.x);
-    Point W = P3-P1;
-    Point M2 = Point((P1.x + P3.x) / 2, (P1.y + P3.y) / 2);
-    Point D2 = Point(-W.y, W.x);
-    double alpha = (double) (D2.y*(M2.x-M1.x) - D2.x*(M2.y-M1.y)) / (D1.x*D2.y - D1.y*D2.x);
-    center = Point(M1.x + alpha*D1.x, M1.y + alpha*D1.y);
-    radius = center.CalcDist(P1);
+    double d1 = P1.CalcDist(P2);
+    double d2 = P1.CalcDist(P3);
+    double d3 = P2.CalcDist(P3);
+    if (fabs(d1+d2-d3) <= EPS) {
+      Circle circle(P2, P3);
+      center = circle.center;
+      radius = circle.radius;
+    } else if (fabs(d1+d3-d2) <= EPS) {
+      Circle circle(P1, P3);
+      center = circle.center;
+      radius = circle.radius;
+    } else if (fabs(d2+d3-d1) <= EPS) {
+      Circle circle(P1, P2);
+      center = circle.center;
+      radius = circle.radius;
+    } else {
+      Point M1 = Point((P1.x + P2.x) / 2, (P1.y + P2.y) / 2);
+      Point V = P2-P1;
+      Point D1 = Point(-V.y, V.x);
+      Point W = P3-P1;
+      Point M2 = Point((P1.x + P3.x) / 2, (P1.y + P3.y) / 2);
+      Point D2 = Point(-W.y, W.x);
+      assert(fabs(D1.x*D2.y - D1.y*D2.x) > EPS);
+      double alpha = (D2.y*(M2.x-M1.x) - D2.x*(M2.y-M1.y)) / (D1.x*D2.y - D1.y*D2.x);
+      center = Point(M1.x + alpha*D1.x, M1.y + alpha*D1.y);
+      radius = center.CalcDist(P1);
+      assert(fabs(radius - center.CalcDist(P2)) < EPS);
+      assert(fabs(radius - center.CalcDist(P3)) < EPS);
+    }
   }
 
   int Contains(const Point& P) const {
-    return center.CalcDist(P) <= radius;
+    return center.CalcDist(P) <= radius + EPS;
   }
 };
 
 int n, m;
 Point points[MAX_N];
 
-Circle FindEnclosingCircles(int& first_index, int last_index, double max_radius,
-                            vector<Point>& margin, vector<Circle>& circles) {
-  Circle last_circle, new_circle;
+Circle MinimumEnclosingCircle(
+    const vector<int>& indexes, int current_index, vector<Point>& margin) {
+  Circle circle;
   if (margin.size() == 0) {
-    last_circle = Circle(points[first_index]);
+    circle = Circle(points[indexes[0]]);
   } else if (margin.size() == 1) {
-    last_circle = Circle(margin[0], points[first_index]);
+    circle = Circle(margin[0], points[indexes[0]]);
   } else if (margin.size() == 2) {
-    last_circle = Circle(margin[0], margin[1]);
+    circle = Circle(margin[0], margin[1]);
   } else {
     return Circle(margin[0], margin[1], margin[2]);
   }
 
-  for (int i = first_index; i <= last_index; ++i) {
-    if (!last_circle.Contains(points[i])) {
-      margin.push_back(points[i]);
-      new_circle = FindEnclosingCircles(first_index, i-1, max_radius, margin, circles);
+  for (int i = 0; i < current_index; ++i) {
+    if (!circle.Contains(points[indexes[i]])) {
+      margin.push_back(points[indexes[i]]);
+      circle = MinimumEnclosingCircle(indexes, i, margin);
       margin.pop_back();
-      if (new_circle.radius > max_radius && margin.size() == 0) {
-        circles.push_back(last_circle);
-        first_index = i;
-        last_circle = Circle(points[i]);
-      } else {
-        last_circle = new_circle;
-      }
     }
   }
-  return last_circle;
+  return circle;
 }
 
-vector<Circle> SimulatePlot(double max_dist) {
-  vector<Circle> result;
+Circle MinimumEnclosingCircle(int first_index, int last_index) {
+  vector<int> indexes;
+  for (int i = first_index; i <= last_index; ++i) {
+    indexes.push_back(i);
+  }
+  random_shuffle(indexes.begin(), indexes.end());
   vector<Point> margin;
-  int first_index = 1;
-  Circle last_circle = FindEnclosingCircles(first_index, n, max_dist, margin, result);
-  result.push_back(last_circle);
+  return MinimumEnclosingCircle(indexes, indexes.size(), margin);
+}
+
+vector<Circle> SimulatePlot(double max_radius) {
+  vector<Circle> result;
+  int last_index = 0;
+  while (last_index < n && (int) result.size() <= m) {
+    int step = 1;
+    while (last_index + step <= n &&
+           MinimumEnclosingCircle(last_index+1, last_index + step).radius <= max_radius) {
+      step *= 2;
+    }
+
+    int front = last_index + step/2, back = min(n, last_index + step);
+    int new_index = last_index + step/2;
+    while (front <= back) {
+      int middle = (front+back) / 2;
+      if (MinimumEnclosingCircle(last_index+1, middle).radius <= max_radius) {
+        new_index = middle;
+        front = middle+1;
+      } else {
+        back = middle-1;
+      }
+    }
+    result.push_back(MinimumEnclosingCircle(last_index+1, new_index));
+    last_index = new_index;
+  }
   return result;
 }
 
 int main() {
-  //freopen("plot.in", "r", stdin);
-  //freopen("plot.out", "w", stdout);
+//  freopen("plot.in", "r", stdin);
+//  freopen("plot.out", "w", stdout);
 
   scanf("%d %d", &n, &m);
   for (int i = 1; i <= n; ++i) {
     int x, y;
     scanf("%d %d ", &x, &y);
     points[i] = Point(x, y);
-  }
-
-  if (n != 5000) {
-    reverse(points+1, points+n+1);
   }
 
   vector<Circle> solution;
@@ -122,9 +160,6 @@ int main() {
 
   printf("%.8lf\n", best_radius);
   printf("%d\n", solution.size());
-  if (n != 5000) {
-    reverse(solution.begin(), solution.end());
-  }
   for (size_t i = 0; i < solution.size(); ++i) {
     printf("%.8lf %.8lf\n", solution[i].center.x, solution[i].center.y);
   }
